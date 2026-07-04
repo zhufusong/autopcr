@@ -1,0 +1,58 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync branches
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git remote add upstream https://github.com/cc004/autopcr.git
+          git fetch upstream main dev --prune
+          git fetch origin main --prune
+          git fetch origin dev --prune || true
+
+          for branch in main dev; do
+            echo "::group::Sync ${branch}"
+
+            if git ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+              git checkout -B "${branch}" "origin/${branch}"
+            else
+              git checkout -B "${branch}" "upstream/${branch}"
+            fi
+
+            if git merge --no-edit "upstream/${branch}"; then
+              git push origin "HEAD:${branch}"
+            else
+              echo "::error::Failed to merge upstream/${branch} into ${branch}. Resolve conflicts manually."
+              git merge --abort || true
+              exit 1
+            fi
+
+            echo "::endgroup::"
+          done
